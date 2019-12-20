@@ -1,0 +1,993 @@
+<html>
+  <head>
+    <style>
+      /* remove the border */
+      body {
+        border: 0;
+        background-color: white;
+      }
+      /* make the canvas the size of the viewport */
+      canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+    </style>
+        <script src='webFunctions2.js'></script>
+        <script src='matrixFiles3.js'></script>
+
+
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+  </body>
+</html>
+<!-- vertex shader -->
+<script id="2d-vertex-shader" type="x-shader/x-vertex">
+
+
+    attribute vec4 a_position;
+    attribute vec4 a_color;
+    attribute vec3 a_normal;
+
+    uniform vec3 u_lightWorldPosition;
+    uniform vec3 u_viewWorldPosition;
+    
+    uniform mat4 u_world;
+    uniform mat4 u_worldViewProjection;
+    uniform mat4 u_worldInverseTranspose;
+
+    uniform float u_xOffset; 
+
+    varying vec4 v_color;
+    varying vec3 v_normal;
+
+    varying vec3 v_surfaceToLight;
+    varying vec3 v_surfaceToView;
+
+    varying float markedPosition;
+
+    void main() {
+        gl_Position =  u_worldViewProjection * a_position;//multiply the position by the matrix 
+        gl_Position.x += u_xOffset;
+
+        v_normal = mat3(u_worldInverseTranspose) * a_normal;//orient the normals and pass to the fragment shader 
+
+        vec3 surfaceWorldPosition = (u_world * a_position).xyz;//compute the world pos of the surface 
+        v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;//compute the vector of the surface to the light and pass it to fs 
+        v_surfaceToView  = u_viewWorldPosition - surfaceWorldPosition;//compute the vector of the surface to the view/camera and pass it to fs
+        v_color = a_color;
+
+        if(a_position.x < 0.0 && a_position.y < 0.0 && a_position.z < 0.0){
+            markedPosition = 1.0;
+        }else{
+            markedPosition = 0.0;
+        }
+    }
+</script>
+
+<!-- fragment shader -->
+<script id="2d-fragment-shader" type="x-shader/x-fragment">
+    precision mediump float;
+
+    varying vec4 v_color;
+    varying vec3 v_normal;
+    varying vec3 v_surfaceToLight;
+    varying vec3 v_surfaceToView; 
+
+    uniform vec4 u_color;
+    uniform float u_shininess;
+    uniform vec3 u_lightDirection;
+    uniform float u_innerLimit;
+    uniform float u_outerLimit;
+
+    uniform float u_time; 
+    varying float markedPosition;
+
+    void main() {
+        //after being interpolated, v_normal isnt a unit vector so it must be normalized
+        vec3 normal = normalize(v_normal);
+
+        vec3 surfaceToLightDirection = normalize(v_surfaceToLight);
+        vec3 surfaceToViewDirection = normalize(v_surfaceToView);
+        vec3 halfVector = normalize(surfaceToLightDirection + surfaceToViewDirection);//halfway btw surfaceToLight and surfaceToView vector, used for determining shine 
+
+        float dotFromDirection = dot(surfaceToLightDirection, -u_lightDirection);//only light if surfaceToLight matches the lightDirection within a limit range 
+
+        float inLight = smoothstep(u_outerLimit, u_innerLimit, dotFromDirection);
+        float light    = inLight * dot(normal, surfaceToLightDirection);
+        float specular = inLight * pow(dot(normal, halfVector), u_shininess); 
+
+        gl_FragColor = v_color;
+        gl_FragColor.rgb;// *= light;
+        gl_FragColor.rgb;// += 0.5;// += specular;;
+
+        if(markedPosition == 1.0){
+          //  gl_FragColor.rgb += 0.5;
+        }
+        //if(gl_FragColor.a != 1.0){
+         //   gl_FragColor = vec4(u_time, u_time, u_time,1.0);
+        //}
+
+        //gl_FragColor = v_color * (v_pos.z/500.0);// vec4( (tmp.x + 500.0)/2000.0, 0.0, tmp.z/500.0, 1.0);
+    }
+</script>
+
+
+
+<!-- vertex shader -->
+<script id="2d-vertex-shader2" type="x-shader/x-vertex">
+
+
+    attribute vec4 a_position;
+    attribute vec4 a_color;
+    attribute vec3 a_normal;
+
+    uniform vec3 u_lightWorldPosition;
+    uniform vec3 u_viewWorldPosition;
+    
+    uniform mat4 u_world;
+    uniform mat4 u_worldViewProjection;
+    uniform mat4 u_worldInverseTranspose;
+
+    uniform float u_xOffset; 
+
+    varying vec4 v_color;
+    varying vec3 v_normal;
+
+    varying vec3 v_surfaceToLight;
+    varying vec3 v_surfaceToView;
+
+
+    void main() {
+        gl_Position =  u_worldViewProjection * a_position;//multiply the position by the matrix 
+        gl_Position.x += u_xOffset;
+
+        v_normal = mat3(u_worldInverseTranspose) * a_normal;//orient the normals and pass to the fragment shader 
+
+        vec3 surfaceWorldPosition = (u_world * a_position).xyz;//compute the world pos of the surface 
+        v_surfaceToLight = u_lightWorldPosition - surfaceWorldPosition;//compute the vector of the surface to the light and pass it to fs 
+        v_surfaceToView  = u_viewWorldPosition - surfaceWorldPosition;//compute the vector of the surface to the view/camera and pass it to fs
+        v_color = a_color;
+    }
+</script>
+
+<!-- fragment shader -->
+<script id="2d-fragment-shader2" type="x-shader/x-fragment">
+    precision mediump float;
+
+    varying vec4 v_color;
+    varying vec3 v_normal;
+    varying vec3 v_surfaceToLight;
+    varying vec3 v_surfaceToView; 
+
+
+    uniform float u_time; 
+    varying float markedPosition;
+
+    void main() {
+
+        gl_FragColor = v_color;
+        gl_FragColor.rgb = (v_color.rgb * (sin(u_time)) * 0.25) + 0.5 ;
+
+    }
+</script>
+
+
+<script>
+    //x rotation: flip upwards
+    //y rotation: flip leftwards
+    //z rotation: flip like a 2d image
+
+    //projection: converts from pixels to clip space but requires things be in front of the origin on the -z axis
+    //      to achieve this, we move the camera to the origin and move everything else the right amount so its still in the same place relative to the camera
+    //         we need to move the world in front of the camera or INVERSE the matrix
+    //              inverse of a matrix that translates X by -123 is a matrix that translates X by 123
+    //         find the matrix on how to move and rotate the camera and apply the inverse to everything 
+    //         view matrix: moves everything the opposite of the camera 
+    document.addEventListener('keypress', logKey);
+
+        function logKey(e) {
+            console.log(` ${e.code}`)
+            var tmp = e.code//.String()
+            tmp = tmp.substring(3)
+            console.log(tmp)
+            if(tmp === "D" && everythingBeaten === false ){
+                //xOffset+=5
+                var goodPick = false
+                while(goodPick === false){
+                    pickedCube+=1
+                    if(pickedCube > 26){
+                        pickedCube = 0
+                    }
+                    if(cubes[pickedCube].beaten === false){
+                        goodPick = true 
+                    }
+                }
+            }else if(tmp === "A" && everythingBeaten === false ){
+                //xOffset-=5
+
+                var goodPick = false
+                while(goodPick === false){
+                    pickedCube-=1
+                    if(pickedCube < 0){
+                        pickedCube = 26
+                    }
+                    if(cubes[pickedCube].beaten === false){
+                        goodPick = true 
+                    }
+                }
+
+            }else if(e.code === "Enter"){
+                console.log(pickedCube, coloredCube)
+                if(pickedCube === coloredCube){
+                    rotationBoost *= 1.22;
+                    cubes[coloredCube].beaten = true 
+
+                    var allBeaten = true 
+                    for(var i = 0; i < cubes.length;i++){
+                        if(cubes[i].beaten === false){
+                            allBeaten = false 
+                        }
+                    }
+                    if(allBeaten === true){
+                        everythingBeaten = true 
+                    }else{
+                        colorsArray = []
+                        for(var i = 0; i < backupColorArray.length; i++){
+                            colorsArray.push(backupColorArray[i])
+                        }
+                         randomizeSide()
+                    }
+
+
+                }else{
+                     cubeCount = 0
+                     elementCount = 0
+                     geomArray = []
+                     indicesArray = []
+                     colorsArray = []
+                     backupColorArray = []
+                     normalsArray = []
+                     cubes = []
+                     pickedCube = 2
+                     coloredCube = 0;
+                     rotationBoost = 0.0025
+
+
+                        var closeZ = 125
+                        var farZ =   75
+
+                        cubes.push(new cube([-125, -75],  [75, 125],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [75, 125],  [farZ, closeZ]))
+                        cubes.push(new cube([75,  125],  [75, 125],  [farZ, closeZ]))
+
+                        cubes.push(new cube([-125, -75], [-25, 25],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [-25, 25],  [farZ,   closeZ]))
+                        cubes.push(new cube([75,  125],  [-25, 25],  [farZ,  closeZ]))
+
+                        cubes.push(new cube([-125, -75], [-125, -75],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [-125, -75],  [farZ, closeZ]))
+                        cubes.push(new cube([75,  125],  [-125, -75],  [farZ, closeZ]))
+
+
+                        var closeZ = 25
+                        var farZ =   -25
+                        cubes.push(new cube([-125, -75],  [75, 125],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],  [75, 125],  [farZ, closeZ]))
+                        cubes.push(new cube([75,  125],  [75, 125],  [farZ, closeZ]))
+
+                        cubes.push(new cube([-125, -75],  [-25, 25],  [farZ, closeZ]))
+                        //cubes.push(new cube([-25, 25],   [-25, 25],  [farZ,   closeZ]))
+                        cubes.push(new cube([75,  125],  [-25, 25],  [farZ,  closeZ]))
+
+                        cubes.push(new cube([-125, -75], [-125, -75],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [-125, -75],  [farZ, closeZ]))
+                        cubes.push(new cube([75,  125],  [-125, -75],  [farZ, closeZ]))
+
+                        var closeZ = -75
+                        var farZ = -125
+                        cubes.push(new cube([-125, -75],  [75, 125],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [75, 125],  [farZ, closeZ]))
+                        cubes.push(new cube([75,  125],  [75, 125],  [farZ, closeZ]))
+
+                        cubes.push(new cube([-125, -75],  [-25, 25],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [-25, 25],  [farZ,   closeZ]))
+                        cubes.push(new cube([75,  125],  [-25, 25],  [farZ,  closeZ]))
+
+                        cubes.push(new cube([-125, -75], [-125, -75],  [farZ, closeZ]))
+                        cubes.push(new cube([-25, 25],   [-125, -75],  [farZ, closeZ]))
+                        cubes.push(new cube([75,  125],  [-125, -75],  [farZ, closeZ]))
+
+
+
+
+                    for(var i = 0; i < colorsArray.length; i++){
+                        backupColorArray.push(colorsArray[i])
+                    }
+                    colorsArray = []
+                    for(var i = 0; i < backupColorArray.length; i++){
+                        colorsArray.push(backupColorArray[i])
+                    }
+                    randomizeSide()
+                }
+            }
+        }
+    
+    var xOffset = 0
+
+    var cubeCount = 0
+    var elementCount = 0
+    var geomArray = []
+    var indicesArray = []
+    var colorsArray = []
+    var backupColorArray = []
+    var normalsArray = []
+    var cubes = []
+    var pickedCube = 2
+    var coloredCube = 0;
+
+    var shininess = 150; //1 to 500
+    var shinyUp = false;
+    var lightLimit = 0.5
+
+    var everythingBeaten = false 
+
+    var lightDirection = [0,0,1]
+    var limit = degToRad(40)
+
+    var rotationBoost = 0.0025;
+
+    var canvas = document.getElementById("canvas")
+        var gl = canvas.getContext("webgl")
+
+    function main(){
+       
+        if(!gl){
+            alert("The goat is on fire")
+        }
+
+        function makeBuffer(gl, data, type){
+            var buffer = gl.createBuffer() 
+            gl.bindBuffer(type, buffer) // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
+            gl.bufferData(type, data, gl.DYNAMIC_DRAW)// Put geometry data into buffer
+
+            return buffer
+        }
+
+        var program = makeProgram(gl, makeShader(gl, gl.VERTEX_SHADER,   document.getElementById("2d-vertex-shader").text), makeShader(gl, gl.FRAGMENT_SHADER, document.getElementById("2d-fragment-shader").text))
+
+        var program2 = makeProgram(gl, makeShader(gl, gl.VERTEX_SHADER,   document.getElementById("2d-vertex-shader2").text), makeShader(gl, gl.FRAGMENT_SHADER, document.getElementById("2d-fragment-shader2").text))
+
+        var uniformSetters = createUniformSetters(gl, program);
+        var attribSetters  = createAttributeSetters(gl, program);
+
+        var uniformSetters2 = createUniformSetters(gl, program2);
+        var attribSetters2  = createAttributeSetters(gl, program2);
+
+
+        var positionBuffer, indexBuffer, colBuffer, normBuffer;
+
+        var translation = [-150, 0, -360];
+        var rotation = [degToRad(190), degToRad(40), degToRad(320)];
+        var scale = [1, 1, 1];
+
+        var fieldOfViewRadians = degToRad(60);
+        var fRotationRadians = 0;
+
+        var then = 0
+
+
+        for(var i = 0; i < colorsArray.length; i++){
+            backupColorArray.push(colorsArray[i])
+        }
+        colorsArray = []
+        for(var i = 0; i < backupColorArray.length; i++){
+            colorsArray.push(backupColorArray[i])
+        }
+        randomizeSide()
+        function render(now){
+            //var tmpArrayX = geomArray
+            //tmpArrayX = tmpArrayX.splice(72, cubes.length * 72)
+
+            now *= 0.001;
+            var deltaTime = now - then
+            then = now
+
+            fRotationRadians+=rotationBoost
+
+            resize(gl.canvas)
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);        // Tell WebGL how to convert from clip space to pixels
+            gl.clearColor(0.2 , 0.2, 0.75 * Math.sin(now), 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);// Clear the canvas AND the depth buffer.
+            gl.enable(gl.CULL_FACE);// Turn on culling. By default backfacing triangles will be culled
+            gl.enable(gl.DEPTH_TEST);// Enable the depth buffer
+            gl.useProgram(program);// Tell it to use our program (pair of shaders)
+
+
+            // Compute the matrix
+            var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+            var zNear = 1;
+            var zFar = 2000;
+            var projectionMatrix = m4.perspective(fieldOfViewRadians, aspect, zNear, zFar);
+
+            //compute the camera's matrix
+            var camera = [0, 150, 300]
+            var target = [0, 35, 0]
+            var up = [0, 1, 0]
+            var cameraMatrix = m4.lookAt(camera, target, up)
+            
+            var viewMatrix = m4.inverse(cameraMatrix)//moves everything opposite of the camera, moving everything relative to the camera
+            var viewProjectionMatrix = m4.multiply(projectionMatrix, viewMatrix)//combine view and projection 
+            var worldMatrix = m4.yRotation(fRotationRadians)
+
+            //multiply the matrices
+            var worldViewProjectionMatrix = m4.multiply(viewProjectionMatrix, worldMatrix)
+            var worldInverseMatrix = m4.inverse(worldMatrix)
+            var worldInverseTransposeMatrix = m4.transpose(worldInverseMatrix)
+            //getPosition(worldViewProjectionMatrix)
+
+            //geomArray = geo
+            var tmpArrayX = []
+            //0: 72 to geom.length
+            //1: 0 to 72, 144 to geom.length
+            for(var i = 0; i < geomArray.length; i++){
+                if(pickedCube === 0){
+                    if(i >= 72){
+                        tmpArrayX.push(geomArray[i])
+                    }else{
+                        tmpArrayX.push(0)
+                    }
+                }else if(pickedCube === 1){
+                    if(i < 72 || i >= 144){
+                        tmpArrayX.push(geomArray[i])
+                    }else{
+                        tmpArrayX.push(0)
+                    }
+                }else{
+                    if( i < pickedCube * 72 || i >= (pickedCube+1)*72){
+                        tmpArrayX.push(geomArray[i])
+                    }else{
+                        tmpArrayX.push(0)
+                    }
+                }
+            }
+
+            
+
+            //tmpArrayX.slice(pickedCube * 72, (pickedCube - 1) * 72)
+
+            indexBuffer = makeBuffer(gl, new Uint16Array(indicesArray), gl.ELEMENT_ARRAY_BUFFER)
+            colBuffer   = makeBuffer(gl, new Float32Array(colorsArray), gl.ARRAY_BUFFER)
+            normBuffer  = makeBuffer(gl, new Float32Array(normalsArray), gl.ARRAY_BUFFER)
+            positionBuffer = makeBuffer(gl, new Float32Array(tmpArrayX), gl.ARRAY_BUFFER)
+
+            var attribs = {
+                a_position: { buffer: positionBuffer, numComponents: 3, },
+                a_color: {buffer: colBuffer, numComponents: 4},
+                a_normal: {buffer: normBuffer, numComponents: 3}
+            };
+            setAttributes(attribSetters, attribs);
+
+
+
+            var uniforms = {
+                u_worldViewProjection: worldViewProjectionMatrix,
+                u_worldInverseTranspose: worldInverseTransposeMatrix,
+                u_viewWorldPosition: camera, 
+                u_lightWorldPosition: [0,0,120],
+
+                u_shininess: shininess,
+                u_lightColor: m4.normalize([1, 0.6, 0.6]),
+                u_specularColor: m4.normalize([1, 0.6, 0.6]),
+
+                u_lightDirection: [-1 * cameraMatrix[8], -1 * cameraMatrix[9], -1* cameraMatrix[10]],
+                u_limit: Math.cos(limit),
+                u_innerLimit: Math.cos(lightLimit/5.0),
+                u_outerLimit: Math.cos(lightLimit),
+
+                u_world: worldMatrix,
+                u_time : now, 
+                u_xOffset: xOffset,
+            }
+            setUniforms(uniformSetters, uniforms)
+
+            //console.log("REBIRTH " , cubes.length, cubes, geomArray.length, indicesArray.length)
+            const vertexCount = 36 * (cubes.length)// 13;
+            const type = gl.UNSIGNED_SHORT;
+            offset = 0;
+            //console.log(vertexCount, geomArray)
+            gl.drawElements(gl.TRIANGLES, vertexCount, type, offset);
+
+            
+
+            gl.useProgram(program2);// Tell it to use our program (pair of shaders)
+           // console.log(pickedCube, cubes.length)
+            var tmpArrayY = []
+            for(var i = 0; i < geomArray.length; i++){
+                tmpArrayY.push(geomArray[i])
+            }
+            tmpArrayY =  tmpArrayY.slice(pickedCube * 72, (pickedCube+1)*72)
+
+            positionBuffer = makeBuffer(gl, new Float32Array(tmpArrayY), gl.ARRAY_BUFFER)
+            colBuffer   = makeBuffer(gl, new Float32Array(colorsArray), gl.ARRAY_BUFFER)
+            normBuffer  = makeBuffer(gl, new Float32Array(normalsArray), gl.ARRAY_BUFFER)
+            var attribs = {
+                a_position: { buffer: positionBuffer, numComponents: 3, },
+                a_color: {buffer: colBuffer, numComponents: 4},
+                a_normal: {buffer: normBuffer, numComponents: 3}
+            };
+            setAttributes(attribSetters2, attribs);
+            var uniforms = {
+                u_worldViewProjection: worldViewProjectionMatrix,
+                u_worldInverseTranspose: worldInverseTransposeMatrix,
+                u_viewWorldPosition: camera, 
+                u_lightWorldPosition: [0,0,120],
+
+                u_shininess: shininess,
+                u_lightColor: m4.normalize([1, 0.6, 0.6]),
+                u_specularColor: m4.normalize([1, 0.6, 0.6]),
+
+                u_lightDirection: [-1 * cameraMatrix[8], -1 * cameraMatrix[9], -1* cameraMatrix[10]],
+                u_limit: Math.cos(limit),
+                u_innerLimit: Math.cos(lightLimit/5.0),
+                u_outerLimit: Math.cos(lightLimit),
+
+                u_world: worldMatrix,
+                u_time : now, 
+                u_xOffset: xOffset,
+            }
+            setUniforms(uniformSetters2, uniforms)
+
+          
+
+            gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, offset);
+
+            requestAnimationFrame(render);
+      }
+      requestAnimationFrame(render);
+  }
+
+    function radToDeg(r) {
+        return r * 180 / Math.PI;
+    }
+
+    function degToRad(d) {
+        return d * Math.PI / 180;
+    }
+
+
+function randomizeSide(){
+    console.log(colorsArray.length, colorsArray.length/96)
+
+    var acceptable = false
+    while(acceptable === false){
+        coloredCube = Math.floor(Math.random() * 26); 
+        if(cubes[coloredCube].beaten === false){
+            acceptable = true 
+        }
+    }
+    //96 16
+    var coloredCubeSide = Math.floor(Math.random() * 6); 
+    if(coloredCubeSide === 3){
+        coloredCubeSide = 4
+    }
+    for(var i = 0; i < colorsArray.length; i++){
+        if(coloredCube === 0){
+            if(i < 96){
+                if(i>= 0 + coloredCubeSide * 16 && i < (coloredCubeSide + 1) * 16){
+                    colorsArray[i] = 1.0
+                }
+            }
+        }else if(coloredCube === 1){
+            if(i >= 96 && i < 192){
+                if(i>= 96 + coloredCubeSide * 16 && i < 96 + (coloredCubeSide + 1) * 16){
+                    colorsArray[i] = 1.0
+                }
+            }
+        }else{
+            if(i >= coloredCube * 96 && i < (coloredCube + 1) * 96){
+                if(i>= coloredCube * 96 + coloredCubeSide * 16 && i < coloredCube * 96 + (coloredCubeSide + 1) * 16){
+
+                 colorsArray[i] = 1.0
+                }
+            }
+        }
+    }
+}
+
+var cube = function(Xrange,Yrange,Zrange){
+    //cubes.push(new cube([-20, 10],   [-10, 30], [-10, 10]))
+    this.id = cubeCount
+
+    this.xPosition = 0
+    this.yPosition = 0
+    this.zPosition = 0
+
+    this.goalX = 0
+    this.goalY = 0
+    this.goalZ = 0
+
+    this.beaten = false; 
+    cubeCount++
+
+    var lowX  = Xrange[0]
+    var highX = Xrange[1]
+        this.x    = ((highX-lowX)/2.0) + lowX
+        this.width  = highX-lowX
+
+    var lowY  = Yrange[0]
+    var highY = Yrange[1]
+        this.y    = ((highY-lowY)/2.0) + lowY
+        this.height = highY-lowY
+
+    var lowZ  = Zrange[0]
+    var highZ = Zrange[1]
+        this.z    = ((highZ-lowZ)/2.0) + lowZ
+        this.depth  = highZ-lowZ
+
+    this.startX = this.x;
+    this.startY = this.y;
+    this.startZ = this.z;
+
+    if(this.x > 0){
+        this.xPosition = 1
+    }else if(this.x < 0){
+        this.xPosition = -1
+    }
+    if(this.y > 0){
+        this.yPosition = 1
+    }else if(this.y < 0){
+        this.yPosition = -1
+    }
+    if(this.z > 0){
+        this.zPosition = 1
+    }else if(this.z < 0){
+        this.zPosition = -1
+    }
+
+    var tmpgi = makeSquare(Xrange,Yrange,Zrange)//using x,y,and z range, obtain data on new cube and add them to the arrays 
+        geomArray    = geomArray.concat(tmpgi[0])
+        indicesArray = indicesArray.concat(tmpgi[1])
+        colorsArray     = colorsArray.concat(tmpgi[2])
+        normalsArray    = normalsArray.concat(tmpgi[3])
+}
+
+//update vertex points and then central points
+cube.prototype.update = function(x,y,z){
+    for(var i = this.id * 72; i < (this.id + 1) * 72; i+=3){
+        geomArray[i]+=x
+        geomArray[i+1]+=y
+        geomArray[i+2]+=z
+    }
+    this.x+=x
+    this.y+=y
+    this.z+=z
+}
+
+//might need updating to adjust id and array info
+cube.prototype.copy = function(){
+    var cubeTmp = new cube([0,0],[0,0],[0,0])
+    cubeTmp.id = this.id;
+
+    cubeTmp.x = this.x;
+    cubeTmp.width = this.width;
+
+    cubeTmp.y = this.y;
+    cubeTmp.height = this.height;
+
+    cubeTmp.z = this.z;
+    cubeTmp.depth = this.depth;
+
+}
+
+cube.prototype.delete = function(){
+       geomArray.splice(this.id * 72, (this.id + 1) * 72)
+    indicesArray.splice(this.id * 36, (this.id + 1) * 36)
+
+     colorsArray.splice(this.id * 96, (this.id + 1) * 96)
+    normalsArray.splice(this.id * 72, (this.id + 1) * 72)
+
+    cubeCount-=1 
+    elementCount-=24
+
+    for(var i = this.id + 1; i < cubes.length; i++){
+        cubes[i].id -= 1 
+        for(var j = cubes[i].id * 36; j < (cubes[i].id + 1) * 36; j++){
+            indicesArray[j]-=24
+        }
+    }
+    cubes.splice(this.id, 1)
+}
+function makeRandomCube(size){
+    var x = (Math.random() * 1000) - 500
+    var y = (Math.random() * 1000) - 500
+    var z = ((Math.random() * 500) * -1) - 200// - 250
+        cubes.push(new cube([x - size, x],  [y - size, y],  [z - size, z]))
+}
+
+var closeZ = 125
+var farZ =   75
+
+cubes.push(new cube([-125, -75],  [75, 125],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [75, 125],  [farZ, closeZ]))
+cubes.push(new cube([75,  125],  [75, 125],  [farZ, closeZ]))
+
+cubes.push(new cube([-125, -75], [-25, 25],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [-25, 25],  [farZ,   closeZ]))
+cubes.push(new cube([75,  125],  [-25, 25],  [farZ,  closeZ]))
+
+cubes.push(new cube([-125, -75], [-125, -75],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [-125, -75],  [farZ, closeZ]))
+cubes.push(new cube([75,  125],  [-125, -75],  [farZ, closeZ]))
+
+
+var closeZ = 25
+var farZ =   -25
+cubes.push(new cube([-125, -75],  [75, 125],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],  [75, 125],  [farZ, closeZ]))
+cubes.push(new cube([75,  125],  [75, 125],  [farZ, closeZ]))
+
+cubes.push(new cube([-125, -75],  [-25, 25],  [farZ, closeZ]))
+//cubes.push(new cube([-25, 25],   [-25, 25],  [farZ,   closeZ]))
+cubes.push(new cube([75,  125],  [-25, 25],  [farZ,  closeZ]))
+
+cubes.push(new cube([-125, -75], [-125, -75],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [-125, -75],  [farZ, closeZ]))
+cubes.push(new cube([75,  125],  [-125, -75],  [farZ, closeZ]))
+
+var closeZ = -75
+var farZ = -125
+cubes.push(new cube([-125, -75],  [75, 125],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [75, 125],  [farZ, closeZ]))
+cubes.push(new cube([75,  125],  [75, 125],  [farZ, closeZ]))
+
+cubes.push(new cube([-125, -75],  [-25, 25],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [-25, 25],  [farZ,   closeZ]))
+cubes.push(new cube([75,  125],  [-25, 25],  [farZ,  closeZ]))
+
+cubes.push(new cube([-125, -75], [-125, -75],  [farZ, closeZ]))
+cubes.push(new cube([-25, 25],   [-125, -75],  [farZ, closeZ]))
+cubes.push(new cube([75,  125],  [-125, -75],  [farZ, closeZ]))
+
+
+function yourFunction(){
+    //if(cubes.length != 0){cubes[0].delete()}
+    //makeRandomCube(Math.random()*25)
+
+    //console.log(cubes)
+    //console.log("c ", geomArray.length, indicesArray.length, colorsArray.length, normalsArray.length)
+    
+
+    for(var i = 0; i < cubes.length; i++){
+        if(cubes[i].beaten === true){
+            if(cubes[i].goalX > cubes[i].x){
+                cubes[i].update(1, 0, 0)
+            }else if(cubes[i].goalX < cubes[i].x){
+                cubes[i].update(-1, 0, 0)
+            }
+            if(cubes[i].goalY > cubes[i].y){
+                cubes[i].update(0, 1, 0)
+            }else if(cubes[i].goalY < cubes[i].y){
+                cubes[i].update(0, -1, 0)
+            }
+            if(cubes[i].goalZ > cubes[i].z){
+                cubes[i].update(0, 0, 1)
+            }else if(cubes[i].goalZ < cubes[i].z){
+                cubes[i].update(0, 0, -1)
+            }
+
+        if(everythingBeaten === true ){
+        
+            if(cubes[i].x === cubes[i].goalX){
+                if(cubes[i].goalX !== cubes[i].startX){
+                    cubes[i].goalX = cubes[i].startX
+                }else{
+                    cubes[i].goalX = 0
+                }
+            }
+            if(cubes[i].y === cubes[i].goalY){
+                if(cubes[i].goalY !== cubes[i].startY){
+                    cubes[i].goalY = cubes[i].startY
+                }else{
+                    cubes[i].goalY = 0
+                }
+            }
+            if(cubes[i].z === cubes[i].goalZ){
+                if(cubes[i].goalZ !== cubes[i].startZ){
+                    cubes[i].goalZ = cubes[i].startZ
+                }else{
+                    cubes[i].goalZ = 0
+                }
+            }
+         }
+        }
+        //console.log(cubes[i])
+        //cubes[i].update(Math.random() * 4 - 2,Math.random() * 4 - 2, Math.random() * 4 - 2)
+    }
+    
+    setTimeout(yourFunction, 25);
+}
+
+setTimeout(yourFunction, 2000);
+
+
+function makeSquare(x, y, z){
+    //console.log(elementCount)
+    var tmpArray = [
+            // Front face
+            x[0], y[0],  z[1],
+            x[1], y[0],  z[1],
+            x[1], y[1],  z[1],
+            x[0], y[1],  z[1],
+
+            // Back face
+            x[0], y[0], z[0],
+            x[0], y[1], z[0],
+            x[1], y[1], z[0],
+            x[1], y[0], z[0],
+
+            // Top face
+            x[0],  y[1], z[0],
+            x[0],  y[1], z[1],
+            x[1],  y[1], z[1],
+            x[1],  y[1], z[0],
+
+            // Bottom face
+            x[0], y[0], z[0],
+            x[1], y[0], z[0],
+            x[1], y[0], z[1],
+            x[0], y[0], z[1],
+
+            // Right face
+            x[1], y[0], z[0],
+            x[1], y[1], z[0],
+            x[1], y[1], z[1],
+            x[1], y[0], z[1],
+
+            // Left face
+            x[0], y[0], z[0],
+            x[0], y[0], z[1],
+            x[0], y[1], z[1],
+            x[0], y[1], z[0]
+    ]
+
+    var indices = [
+        0+elementCount,  1+elementCount,  2+elementCount,      0+elementCount,  2+elementCount,  3+elementCount,    // front
+        4+elementCount,  5+elementCount,  6+elementCount,      4+elementCount,  6+elementCount,  7+elementCount,    // back
+        8+elementCount,  9+elementCount,  10+elementCount,     8+elementCount,  10+elementCount, 11+elementCount,   // top
+        12+elementCount, 13+elementCount, 14+elementCount,     12+elementCount, 14+elementCount, 15+elementCount,   // bottom
+        16+elementCount, 17+elementCount, 18+elementCount,     16+elementCount, 18+elementCount, 19+elementCount,   // right
+        20+elementCount, 21+elementCount, 22+elementCount,     20+elementCount, 22+elementCount, 23+elementCount,   // left
+    ];
+
+    var newColor = []
+    for(var i = 0; i < 96; i++){
+        newColor.push(Math.random())
+    }
+    var colorsb = [
+        [1.0, 0.1, 0.1], // Front face
+        [1.0, 1.0, 0.1], // Back face
+        [0.1, 1.0, 0.1], // Top face
+        [1.0, 0.5, 0.5], // Bottom face
+        [1.0, 0.1, 1.0], // Right face
+        [0.1, 0.1, 1.0]  // Left face
+    ];
+    var unpackedColors = [];
+    for (var i in colorsb) {
+        var color = [colorsb[i][0], colorsb[i][1], colorsb[i][2], 1.0];
+        for (var j=0; j < 4; j++) {
+            unpackedColors = unpackedColors.concat(color);
+        }
+    }
+
+    var normals = [
+        // Front
+        0.0,  0.0,  1.0,
+        0.0,  0.0,  1.0,
+        0.0,  0.0,  1.0,
+        0.0,  0.0,  1.0,
+
+        // Back
+        0.0,  0.0, -1.0,
+        0.0,  0.0, -1.0,
+        0.0,  0.0, -1.0,
+        0.0,  0.0, -1.0,
+
+        // Top
+        0.0,  1.0,  0.0,
+        0.0,  1.0,  0.0,
+        0.0,  1.0,  0.0,
+        0.0,  1.0,  0.0,
+
+        // Bottom
+        0.0, -1.0,  0.0,
+        0.0, -1.0,  0.0,
+        0.0, -1.0,  0.0,
+        0.0, -1.0,  0.0,
+
+        // Right
+        1.0,  0.0,  0.0,
+        1.0,  0.0,  0.0,
+        1.0,  0.0,  0.0,
+        1.0,  0.0,  0.0,
+
+        // Left
+        -1.0,  0.0,  0.0,
+        -1.0,  0.0,  0.0,
+        -1.0,  0.0,  0.0,
+        -1.0,  0.0,  0.0
+    ]
+    elementCount+=24
+    return [tmpArray, indices, unpackedColors, normals]
+}
+
+main()
+
+function getPosition(matr){
+      var minX = 9999999
+      var maxX = -9999999
+
+      var minY = 9999999
+      var maxY = -9999999
+
+      var minZ = 9999999
+      var maxZ = -9999999
+      for(var i = 0; i < geomArray.length; i+=3){
+          var a = [geomArray[i], geomArray[i+1], geomArray[i+2], 1]
+          var b = matr 
+
+
+          var x =  (a[0 * 4 + 0] *  b[0 * 4 + 0]) + (a[0 * 4 + 1] *  b[1 * 4 + 0]) + (a[0 * 4 + 2] *  b[2 * 4 + 0]) + (a[0 * 4 + 3] *  b[3 * 4 + 0]) 
+          var y =  (a[0 * 4 + 0] *  b[0 * 4 + 1]) + (a[0 * 4 + 1] *  b[1 * 4 + 1]) + (a[0 * 4 + 2] *  b[2 * 4 + 1]) + (a[0 * 4 + 3] *  b[3 * 4 + 1]) 
+          var z =  (a[0 * 4 + 0] *  b[0 * 4 + 2]) + (a[0 * 4 + 1] *  b[1 * 4 + 2]) + (a[0 * 4 + 2] *  b[2 * 4 + 2]) + (a[0 * 4 + 3] *  b[3 * 4 + 2]) 
+
+          if(x < minX){
+             minX = x
+          }
+          if(x > maxX){
+             maxX = x
+          }
+
+          if(y < minY){
+             minY = y
+          }
+          if(y > maxY){
+             maxY = y
+          }
+
+          if(z < minZ){
+             minZ = z
+          }
+          if(z > maxZ){
+             maxZ = z
+          }
+      }
+
+      //console.log("MIN X: ", minX, " Y: ", minY, " Z: ", minZ)
+      //console.log("MAX X: ", maxX, " Y: ", maxY, " Z: ", maxZ)
+
+      var a = [geomArray[0], geomArray[1], geomArray[2], 1]
+      var b = matr 
+      var x =  (a[0 * 4 + 0] *  b[0 * 4 + 0]) + (a[0 * 4 + 1] *  b[1 * 4 + 0]) + (a[0 * 4 + 2] *  b[2 * 4 + 0]) + (a[0 * 4 + 3] *  b[3 * 4 + 0]).toFixed(3)
+      var y =  (a[0 * 4 + 0] *  b[0 * 4 + 1]) + (a[0 * 4 + 1] *  b[1 * 4 + 1]) + (a[0 * 4 + 2] *  b[2 * 4 + 1]) + (a[0 * 4 + 3] *  b[3 * 4 + 1]).toFixed(3)
+      var z =  (a[0 * 4 + 0] *  b[0 * 4 + 2]) + (a[0 * 4 + 1] *  b[1 * 4 + 2]) + (a[0 * 4 + 2] *  b[2 * 4 + 2]) + (a[0 * 4 + 3] *  b[3 * 4 + 2]).toFixed(3)
+      var w =  (a[0 * 4 + 0] *  b[0 * 4 + 3]) + (a[0 * 4 + 1] *  b[1 * 4 + 3]) + (a[0 * 4 + 2] *  b[2 * 4 + 3]) + (a[0 * 4 + 3] *  b[3 * 4 + 3]).toFixed(3)
+
+
+      //console.log("X: ", x, " Y: ", y, " Z: ", z)
+      //console.log(matr * [geomArray[0], geomArray[1], geomArray[2], 1])
+    }
+
+    function resize(canvas) {
+    // Lookup the size the browser is displaying the canvas.
+    var displayWidth  = canvas.clientWidth;
+    var displayHeight = canvas.clientHeight;
+    // Check if the canvas is not the same size.
+    if (canvas.width  != displayWidth || canvas.height != displayHeight) {
+        // Make the canvas the same size
+        canvas.width  = displayWidth;
+        canvas.height = displayHeight;
+    }
+}
+</script>
